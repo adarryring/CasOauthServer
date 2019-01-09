@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:p="http://www.springframework.org/schema/p"
+	xmlns:c="http://www.springframework.org/schema/c" xmlns:tx="http://www.springframework.org/schema/tx" xmlns:util="http://www.springframework.org/schema/util"
+	xmlns:sec="http://www.springframework.org/schema/security" xmlns:context="http://www.springframework.org/schema/context"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.2.xsd
+       http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-3.2.xsd
+       http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security-3.2.xsd
+       http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
+       http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
+
+	<import resource="classpath:config/casOauthServer/spring-configuration/propertyFileConfigurer.xml" />
+
+	<!-- <bean id="authenticationManager" class="org.jasig.cas.authentication.PolicyBasedAuthenticationManager"> -->
+	<!-- <constructor-arg> -->
+	<!-- <map> -->
+	<!-- <entry key-ref="primaryAuthenticationHandler" value-ref="primaryPrincipalResolver"></entry> -->
+	<!-- <entry key-ref="proxyAuthenticationHandler" value-ref="proxyPrincipalResolver"></entry> -->
+	<!-- </map> -->
+	<!-- </constructor-arg> -->
+
+	<!-- <property name="authenticationPolicy"> -->
+	<!-- <bean class="org.jasig.cas.authentication.AnyAuthenticationPolicy" /> -->
+	<!-- </property> -->
+
+	<!-- <property name="authenticationMetaDataPopulators"> -->
+	<!-- <list> -->
+	<!-- <bean class="org.jasig.cas.authentication.SuccessfulHandlerMetaDataPopulator"></bean> -->
+	<!-- <bean class="org.jasig.cas.authentication.principal.RememberMeAuthenticationMetaDataPopulator"></bean> -->
+	<!-- </list> -->
+	<!-- </property> -->
+	<!-- </bean> -->
+	<bean id="authenticationManager" class="org.jasig.cas.authentication.PolicyBasedAuthenticationManager">
+		<constructor-arg>
+			<map>
+				<entry key-ref="primaryAuthenticationHandler" value-ref="primaryPrincipalResolver"/>
+				<entry key-ref="oauthAuthenticationHandler" value-ref="primaryPrincipalResolver"/>
+				<entry key-ref="proxyAuthenticationHandler" value-ref="proxyPrincipalResolver"/>
+			</map>
+		</constructor-arg>
+		<property name="authenticationMetaDataPopulators">
+			<util:list>
+				<bean class="org.jasig.cas.support.pac4j.authentication.ClientAuthenticationMetaDataPopulator" />
+			</util:list>
+		</property>
+		<property name="authenticationPolicy">
+			<bean class="org.jasig.cas.authentication.AnyAuthenticationPolicy" />
+		</property>
+	</bean>
+	<bean id="oauthAuthenticationHandler" class="org.jasig.cas.support.pac4j.authentication.handler.support.ClientAuthenticationHandler">
+		<constructor-arg index="0" ref="clients" />
+	</bean>
+
+
+	<!-- Required for proxy ticket mechanism. -->
+	<bean id="proxyAuthenticationHandler" class="org.jasig.cas.authentication.handler.support.HttpBasedServiceCredentialsAuthenticationHandler"
+		p:httpClient-ref="httpClient" />
+
+	<!-- 系统、启用、邮箱登陆 -->
+	<bean id="dataSource" class="com.mchange.v2.c3p0.ComboPooledDataSource">
+		<property name="driverClass" value="${db.driver}"/>
+		<property name="jdbcUrl" value="${db.url}"/>
+		<property name="user" value="${db.user}"/>
+		<property name="password" value="${db.password}"/>
+	</bean>
+	<bean id="primaryAuthenticationHandler" class="org.jasig.cas.adaptors.jdbc.QueryDatabaseAuthenticationHandler">
+		<property name="dataSource" ref="dataSource" />
+		<property name="sql" value="${sql.sql_login}" />
+	</bean>
+
+
+	<!-- Required for proxy ticket mechanism -->
+	<bean id="proxyPrincipalResolver" class="org.jasig.cas.authentication.principal.BasicPrincipalResolver" />
+
+	<bean id="primaryPrincipalResolver" class="org.jasig.cas.authentication.principal.PersonDirectoryPrincipalResolver">
+		<property name="attributeRepository" ref="attributeRepository" />
+	</bean>
+
+	<bean id="jdbcTemplate" class="org.springframework.jdbc.core.JdbcTemplate">
+		<property name="dataSource" ref="dataSource"/>
+	</bean>
+
+	<!--<bean id="attributeRepository" class="com.cs.core.dao.AccountAttributeDao">-->
+		<!--<property name="jdbcTemplate" ref="jdbcTemplate"></property>-->
+	<!--</bean>-->
+	<bean id="attributeRepository" class="org.jasig.services.persondir.support.jdbc.SingleRowJdbcPersonAttributeDao">
+		<constructor-arg index="0" ref="dataSource" />
+		<constructor-arg index="1" value="${attr.select_sql}"/>
+		<!-- 组装sql用的查询条件属性 -->
+		<property name="queryAttributeMapping">
+			<map>
+				<entry key="username" value="username" />
+				<!-- <entry key="email" value="username" /> -->
+			</map>
+		</property>
+		<!-- 如果要组装多个查询条件，需要加上下面这个，默认为AND -->
+		<!-- <property name="queryType"> -->
+		<!-- <value>OR</value> -->
+		<!-- </property> -->
+		<!-- 要获取的属性在这里配置 -->
+		<property name="resultAttributeMapping">
+			<!--key为对应的数据库字段名称，value为提供给客户端获取的属性名字，系统会自动填充值 -->
+			<map>
+				<entry key="id" value="id"/>
+				<entry key="username" value="username" />
+				<entry key="password" value="password" />
+				<entry key="is_admin" value="is_admin" />
+				<entry key="email" value="email" />
+			</map>
+		</property>
+	</bean>
+
+	<bean id="serviceRegistryDao" class="org.jasig.cas.services.InMemoryServiceRegistryDaoImpl" p:registeredServices-ref="registeredServicesList" />
+
+	<!-- oauth -->
+	<util:list id="registeredServicesList">
+		<bean class="org.jasig.cas.services.RegexRegisteredService" p:id="0" p:name="HTTP and IMAP" p:description="Allows HTTP(S) and IMAP(S) protocols"
+			p:serviceId="^(https?|imaps?)://.*" p:evaluationOrder="10000001" p:ignoreAttributes="true">
+			<property name="allowedAttributes">
+				<list>
+					<value>id</value>
+					<value>username</value>
+					<value>password</value>
+					<value>is_admin</value>
+					<value>email</value>
+				</list>
+			</property>
+		</bean>
+	</util:list>
+
+	<bean id="auditTrailManager" class="com.github.inspektr.audit.support.Slf4jLoggingAuditTrailManager" />
+
+	<bean id="healthCheckMonitor" class="org.jasig.cas.monitor.HealthCheckMonitor" p:monitors-ref="monitorsList" />
+
+	<util:list id="monitorsList">
+		<bean class="org.jasig.cas.monitor.MemoryMonitor" p:freeMemoryWarnThreshold="10" />
+		<bean class="org.jasig.cas.monitor.SessionMonitor" p:ticketRegistry-ref="ticketRegistry" p:serviceTicketCountWarnThreshold="5000"
+			p:sessionCountWarnThreshold="100000" />
+	</util:list>
+</beans>
